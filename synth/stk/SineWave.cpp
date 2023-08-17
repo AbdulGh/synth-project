@@ -23,13 +23,11 @@ StkFrames SineWave :: table_;
 SineWave :: SineWave( void )
   : time_(0.0), rate_(1.0), phaseOffset_(0.0)
 {
-  if ( table_.empty() ) {
+    if ( table_.empty() ) {
     table_.resize( TABLE_SIZE + 1, 1 );
     StkFloat temp = 1.0 / TABLE_SIZE;
     for ( unsigned long i=0; i<=TABLE_SIZE; i++ )
       table_[i] = sin( TWO_PI * i * temp );
-
-    this->setFrequency(261.6);
   }
 
   Stk::addSampleRateAlert( this );

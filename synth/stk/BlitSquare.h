@@ -42,8 +42,8 @@ namespace stk {
 class BlitSquare: public Generator
 {
  public:
-  //! Default constructor that initializes BLIT frequency to 220 Hz.
-  BlitSquare( StkFloat frequency = 220.0 );
+  //! Default constructor that initializes BLIT frequency to 261 Hz.
+  BlitSquare( StkFloat frequency = 261.6 );
 
   //! Class destructor.
   ~BlitSquare();

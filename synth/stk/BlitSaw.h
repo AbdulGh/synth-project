@@ -32,7 +32,7 @@ class BlitSaw: public Generator
 {
  public:
   //! Class constructor.
-  BlitSaw( StkFloat frequency = 220.0 );
+  BlitSaw( StkFloat frequency = 261.6 );
 
   //! Class destructor.
   ~BlitSaw();

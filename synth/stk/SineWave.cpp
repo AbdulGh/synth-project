@@ -28,6 +28,8 @@ SineWave :: SineWave( void )
     StkFloat temp = 1.0 / TABLE_SIZE;
     for ( unsigned long i=0; i<=TABLE_SIZE; i++ )
       table_[i] = sin( TWO_PI * i * temp );
+
+    this->setFrequency(261.6);
   }
 
   Stk::addSampleRateAlert( this );

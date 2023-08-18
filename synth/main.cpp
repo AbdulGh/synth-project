@@ -64,7 +64,7 @@ int main()
     Stk::showWarnings(true);
     srand(time(NULL));
 
-    generateRandomWaveforms(10, "C:\\Users\\abdulg\\Desktop\\tmp");
+    generateRandomWaveforms(10, "C:\\Users\\abdulg\\source\\repos\\Synth\\backwards\\tmp");
 
 	return 0;
 }

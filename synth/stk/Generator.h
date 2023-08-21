@@ -39,6 +39,7 @@ class Generator : public Stk
     case an out-of-range value will trigger an StkError exception.
   */
   virtual StkFrames& tick( StkFrames& frames, unsigned int channel = 0 ) = 0;
+  virtual StkFloat tick( ) = 0;
 
   protected:
 

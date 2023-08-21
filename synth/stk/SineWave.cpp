@@ -21,7 +21,7 @@ namespace stk {
 StkFrames SineWave :: table_;
 
 SineWave :: SineWave( void )
-  : time_(0.0), rate_(TABLE_SIZE * 261.6 / Stk::sampleRate()), phaseOffset_(0.0)
+  : time_(0.0), rate_(TABLE_SIZE * 440 / Stk::sampleRate()), phaseOffset_(0.0)
 {
     if ( table_.empty() ) {
     table_.resize( TABLE_SIZE + 1, 1 );

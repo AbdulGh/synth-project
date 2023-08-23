@@ -3,7 +3,7 @@
 
 const unsigned long TABLE_SIZE = 2048;
 
-#include "Generator.h"
+#include "Oscillator.h"
 
 namespace stk {
 
@@ -13,7 +13,7 @@ namespace stk {
 
     This class computes and saves a static sine "table" that can be
     shared by multiple instances.  It has an interface similar to the
-    WaveLoop class but inherits from the Generator class.  Output
+    WaveLoop class but inherits from the Oscillator class. Output
     values are computed using linear interpolation.
 
     The "table" length, set in SineWave.h, is 2048 samples by default.
@@ -22,7 +22,7 @@ namespace stk {
 */
 /***************************************************/
 
-class SineWave : public Generator
+class SineWave : public Oscillator
 {
 public:
   //! Default constructor.

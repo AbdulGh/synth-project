@@ -1,7 +1,7 @@
 #ifndef STK_BLITSQUARE_H
 #define STK_BLITSQUARE_H
 
-#include "Generator.h"
+#include "Oscillator.h"
 #include <cmath>
 #include <limits>
 
@@ -39,7 +39,7 @@ namespace stk {
 */
 /***************************************************/
 
-class BlitSquare: public Generator
+class BlitSquare: public Oscillator
 {
  public:
   //! Default constructor that initializes BLIT frequency to 440 Hz.

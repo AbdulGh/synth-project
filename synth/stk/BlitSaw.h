@@ -1,7 +1,7 @@
 #ifndef STK_BLITSAW_H
 #define STK_BLITSAW_H
 
-#include "Generator.h"
+#include "Oscillator.h"
 #include <cmath>
 #include <limits>
 
@@ -28,7 +28,7 @@ namespace stk {
 */
 /***************************************************/
 
-class BlitSaw: public Generator
+class BlitSaw: public Oscillator
 {
  public:
   //! Class constructor.

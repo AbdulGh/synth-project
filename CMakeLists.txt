@@ -23,6 +23,6 @@ file(GLOB stk_include
 add_executable (synth 
 	synth/main.cpp
     ${stk_include}
-)
+ "synth/Synth.h" "synth/Synth.cpp")
 
 target_compile_definitions(synth PRIVATE __OS_WINDOWS__ __LITTLE_ENDIAN__)

@@ -9,11 +9,12 @@
 #include <filesystem>
 #include <functional>
 #include <cmath>
+#include <string>
 
 using namespace stk;
 
-constexpr int framesToGenerate = 64000;
-constexpr stk::StkFloat sampleRate = 16000.0;
+constexpr int framesToGenerate = 6400;
+constexpr stk::StkFloat sampleRate = 1600.0;
 constexpr float duration = framesToGenerate / sampleRate;
 
 inline float uniformSample () {
@@ -38,15 +39,27 @@ void generateRandomWaveforms(int number, std::string_view directory)
         //filter envelope
         float fAttack = duration * uniformSample() / 4;
         float fDecay = duration * uniformSample() / 4;
-        float fSustain = uniformSample();
-        float fRelease = duration * uniformSample() / 4;
+        float fSustain = (rand() % 5) ? uniformSample() : 0; //rand() because zero sustain level is very unlikely otherwise, but we'd like to have some examples of this
+        float fRelease = duration * uniformSample() / 4; //todo consider setting this to some fixed value if no sustain, for the CNN
+
+        //filter modulation
+        int filterModulated = rand() % 2;
+        float fModFreq = filterModulated * uniformSample() * 8;
+        float fModInt = filterModulated * uniformSample() / 2;
+
+        //vibrato
+        int pitchModulated = rand() % 2;
+        float pModFreq = pitchModulated * uniformSample() * 8;
+        float pModInt = pitchModulated * uniformSample() / 32;
 
         //put that all into a synth
-        Synth synth{};
+        Synth synth{waveChoice};
         synth.setPitch(pitch);
         synth.setWaveForm(waveChoice);
         synth.setFilterParameters(filterCutoff, filterResonance);
         synth.setFilterADSR(fAttack, fDecay, fSustain, fRelease);
+        synth.setFilterLFOParameters(fModFreq, fModInt);
+        synth.setVibrato(pModFreq, pModInt);
         
         //too embarrased to admit that im using windows
         std::filesystem::path filenameBase(directory);
@@ -66,13 +79,20 @@ void generateRandomWaveforms(int number, std::string_view directory)
     }
 }
 
-int main()
+int main(int argc, char** argv)
 {
+    if (argc != 3) {
+        std::cout << "USAGE: " << argv[0] << " numberOfSamples directoryToPutThemIn\n";
+        return 0;
+    }
+
+    char* dir = argv[2];
+    int num = std::stoi(argv[1]); //no error handling for now
     Stk::setSampleRate(sampleRate);
     Stk::showWarnings(true);
     srand(time(NULL));
 
-    generateRandomWaveforms(10, "C:\\Users\\abdulg\\Desktop\\waves");
+    generateRandomWaveforms(num, dir);
 
 	return 0;
 }

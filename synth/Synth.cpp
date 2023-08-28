@@ -116,6 +116,8 @@ std::ostream& operator<<(std::ostream& os, const Synth& syn)
     writeParameter(syn.fReleaseTime);
     writeParameter(syn.fModFreq);
     writeParameter(syn.fModInt);
+    writeParameter(syn.pModFreq);
+    writeParameter(syn.pModInt);
 
     return os;
 }

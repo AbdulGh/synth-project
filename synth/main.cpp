@@ -1,5 +1,6 @@
 ﻿#include "./stk/FileWvOut.h"
 #include "Synth.h"
+#include "Config.h"
 
 #include <stdlib.h>
 #include <time.h>
@@ -12,10 +13,6 @@
 #include <string>
 
 using namespace stk;
-
-constexpr stk::StkFloat sampleRate = 24000.0;
-constexpr int duration = 4;
-constexpr int framesToGenerate = sampleRate * duration;
 
 inline float uniformSample () {
     return static_cast<float>(rand() / static_cast<float>(RAND_MAX));
@@ -34,8 +31,8 @@ void generateRandomWaveforms(int number, std::string_view directory)
         Synth::waveform waveChoice = static_cast<Synth::waveform>(rand() % 3);
         
         //filter parameters
-        int filterCutoff = 10 + static_cast<int>(rand() % 430);
-        float filterResonance = 0.1 + uniformSample() / 9;
+        int filterCutoff = static_cast<int>(rand() % static_cast<int>(ceil(pitch)));
+        float filterResonance = uniformSample();
 
         //filter envelope
         float fAttack = duration * uniformSample() / 4;

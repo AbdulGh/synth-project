@@ -14,19 +14,43 @@ WAVELET_SCALES = np.arange(1, 30)
 SAMPLE_RATE = 16000
 SAMPLES_PER_EXAMPLE = 64000
 NUM_WAVES = 3
-NUM_OTHER_FEATURES = 9
+NUM_OTHER_FEATURES = 11
 NUM_DCT_COEFFICIENTS = 1024
 SYNTHESIZER_PATH = "C:\\Users\\abdulg\\source\\repos\\Synth\\out\\build\\x64-debug\\synth.exe"
+
+"""
+continuous parameters currently look like
+pitch
+filterCutoff
+filterResonance
+fAttackTime
+fDecayTime
+fSustainLevel
+fReleaseTime
+fModFreq
+fModInt
+pModInt (vibrato)
+pModFreq
+"""
+
+#for normalization
+PARAMETER_LBS = np.asarray([0, 0, 0, 440, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+PARAMETER_RANGE = np.asarray([1, 1, 1, 1661.22, 1661, 1, 1, 1, 1, 1, 8, 1/2, 8, 1/32]) - PARAMETER_LBS
+
+def normaliseParams(params):
+	return (params - PARAMETER_LBS)/PARAMETER_RANGE
 
 def processWavs(datapath):
 	patchFiles = sorted(glob.glob(os.path.join(datapath, "*.txt")))
 	waveFiles = sorted(glob.glob(os.path.join(datapath, "*.wav")))
 	waves = [librosa.load(waveFile, sr=SAMPLE_RATE, dtype=np.float32)[0] for waveFile in waveFiles]
 	scaleograms = [pywt.cwt(wave, WAVELET_SCALES, WAVELET_NAME)[0] for wave in waves]
+	rawParams = [np.loadtxt(patchFile) for patchFile in patchFiles]
+
 	return (
 		np.asarray([dct(scaleo, type=2, axis=1)[:, :NUM_DCT_COEFFICIENTS] for scaleo in scaleograms]),
 		np.split( #split to separate the categorisation from the rest
-			np.asarray([np.loadtxt(patchFile) for patchFile in patchFiles]),
+			[normaliseParams(params) for params in rawParams],
 			[NUM_WAVES],
 			axis=1
 		)
@@ -38,13 +62,14 @@ def generateBatch():
 	datapath = os.path.abspath("./trainingdata")
 	while True:
 		#will overwrite all of the previous batch as examplesPerBatch stays constant
+		#todo - figure out why STK writes a newline to stderr per written file
 		subprocess.run(f"{SYNTHESIZER_PATH} {EXAMPLES_PER_BATCH} {datapath}", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 		yield processWavs(datapath)
 
 def generateValidationSet():
 	print("generating validation data")
 	datapath = os.path.abspath("./validationdata")
-	#subprocess.run(f"{SYNTHESIZER_PATH} 200 {datapath}", stdout=subprocess.DEVNULL)
+	subprocess.run(f"{SYNTHESIZER_PATH} 200 {datapath}", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 	return processWavs(datapath)
 
 #defining the model
@@ -98,6 +123,7 @@ def run():
 			callbacks=[stoppingCondition],
 			epochs=1,
 			steps_per_epoch = 32,
+			batch_size=32,
 			verbose=1
 		)
 

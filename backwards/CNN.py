@@ -88,12 +88,13 @@ def run():
 	#the goal is even to 'overfit' the generator, but we still could do with a stopping condition
 	stoppingCondition = EarlyStopping(monitor="val_loss", patience=10, restore_best_weights=True)
 	model = getModel()
+	validationData = generateValidationSet()
 	
 	history = {}
 	while True:
 		history = model.fit(
 			x=generateBatch(), #yields a generator
-			validation_data=generateValidationSet(),
+			validation_data=validationData,
 			callbacks=[stoppingCondition],
 			epochs=1,
 			steps_per_epoch = 32,

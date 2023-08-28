@@ -281,7 +281,7 @@ bool FileWrite :: setWavFile( std::string fileName )
   if ( fwrite(&data, 4, 1, fd_) != 1 ) goto error;
   if ( fwrite(&dataSize, 4, 1, fd_) != 1 ) goto error;
 
-  oStream_ << "FileWrite: creating WAV file: " << fileName;
+  //oStream_ << "FileWrite: creating WAV file: " << fileName;
   handleError( StkError::STATUS );
   return true;
 

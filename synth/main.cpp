@@ -13,9 +13,9 @@
 
 using namespace stk;
 
-constexpr int framesToGenerate = 6400;
-constexpr stk::StkFloat sampleRate = 1600.0;
-constexpr float duration = framesToGenerate / sampleRate;
+constexpr stk::StkFloat sampleRate = 24000.0;
+constexpr int duration = 4;
+constexpr int framesToGenerate = sampleRate * duration;
 
 inline float uniformSample () {
     return static_cast<float>(rand() / static_cast<float>(RAND_MAX));
@@ -29,7 +29,8 @@ void generateRandomWaveforms(int number, std::string_view directory)
 {
     for (int i = 0; i < number; ++i) {
         //choose a waveform and pitch
-        float pitch = notesFromA4(rand() % 12, rand() % 3 - 2);
+        float pitch = notesFromA4(rand() % 12, rand() % 2);
+        pitch = 440.0f; //todo unfix this when the time is right
         Synth::waveform waveChoice = static_cast<Synth::waveform>(rand() % 3);
         
         //filter parameters
@@ -91,7 +92,6 @@ int main(int argc, char** argv)
     Stk::setSampleRate(sampleRate);
     Stk::showWarnings(true);
     srand(time(NULL));
-
     generateRandomWaveforms(num, dir);
 
 	return 0;

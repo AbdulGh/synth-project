@@ -27,7 +27,6 @@ void generateRandomWaveforms(int number, std::string_view directory)
     for (int i = 0; i < number; ++i) {
         //choose a waveform and pitch
         float pitch = notesFromA4(rand() % 12, rand() % 2);
-        pitch = 440.0f; //todo unfix this when the time is right
         Synth::waveform waveChoice = static_cast<Synth::waveform>(rand() % 3);
         
         //filter parameters
@@ -56,7 +55,7 @@ void generateRandomWaveforms(int number, std::string_view directory)
         synth.setWaveForm(waveChoice);
         synth.setFilterParameters(filterCutoff, filterResonance);
         synth.setFilterADSR(fAttack, fDecay, fSustain, fRelease);
-        synth.setFilterLFOParameters(fModFreq, fModInt);
+        synth.setFilterLFO(fModFreq, fModInt);
         synth.setVibrato(pModFreq, pModInt);
         
         //too embarrased to admit that im using windows
@@ -104,7 +103,7 @@ std::unique_ptr<stk::StkFrames> invokeSynthesizer(char** args) {
         std::stof(args[8]),
         std::stof(args[9])
     );
-    synth.setFilterLFOParameters(
+    synth.setFilterLFO(
         std::stof(args[10]),
         std::stof(args[11])
     );

@@ -63,7 +63,7 @@ void Synth::setFilterADSR(float attackTime, float decayTime, float sustainLevel,
 	fReleaseTime = releaseTime;
 }
 
-void Synth::setFilterLFOParameters(float frequency, float intensity)
+void Synth::setFilterLFO(float frequency, float intensity)
 {
     fModFreq = frequency;
     fModInt = intensity;

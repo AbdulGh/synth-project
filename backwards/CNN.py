@@ -15,7 +15,7 @@ SAMPLE_RATE = 16000
 SAMPLES_PER_EXAMPLE = 64000
 NUM_WAVES = 3
 NUM_OTHER_FEATURES = 11
-NUM_DCT_COEFFICIENTS = 1024
+NUM_DCT_COEFFICIENTS = 1400
 SYNTHESIZER_PATH = "C:\\Users\\abdulg\\source\\repos\\Synth\\out\\build\\x64-debug\\synth.exe"
 
 """
@@ -69,7 +69,7 @@ def generateBatch():
 def generateValidationSet():
 	print("generating validation data")
 	datapath = os.path.abspath("./validationdata")
-	subprocess.run(f"{SYNTHESIZER_PATH} 600 {datapath}", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+	#subprocess.run(f"{SYNTHESIZER_PATH} 600 {datapath}", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 	return processWavs(datapath)
 
 #defining the model
@@ -86,7 +86,6 @@ def getModel():
 	conv4 = Conv2D(128, (2,2), strides=(1,1), activation="relu", padding="same")(conv3)
 	#flatten and then bifurcate the network into the classification and regression parts
 	flat = Flatten()(conv4)
-	print(flat.shape[1])
 	classDense1 = Dense(min(flat.shape[1] // 2, NUM_WAVES * 4), activation="relu")(flat)
 	classDense2 = Dense(min(flat.shape[1] // 4, NUM_WAVES * 2), activation="relu")(classDense1)
 	classDense3 = Dense(NUM_WAVES, activation="relu")(classDense2)
@@ -110,11 +109,19 @@ def getModel():
 
 	return model
 
-from keras.callbacks import EarlyStopping
+from keras.callbacks import EarlyStopping, ModelCheckpoint
 import pickle
 def run():
+	checkpoint = ModelCheckpoint(
+		"C:\\Users\\abdulg\\Desktop\\waves\\checkpoint.keras",
+		save_weights_only=False,
+		save_best_only=True,
+		monitor="val_loss",
+		mode="min",
+		save_freq="epoch"
+	)
 	#the goal is even to 'overfit' the generator, but we still could do with a stopping condition
-	stoppingCondition = EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True)
+	stoppingCondition = EarlyStopping(monitor="val_loss", patience=3, restore_best_weights=True)
 	model = getModel()
 	validationData = generateValidationSet()
 	
@@ -123,7 +130,7 @@ def run():
 		history = model.fit(
 			x=generateBatch(), #yields a generator
 			validation_data=validationData,
-			callbacks=[stoppingCondition],
+			callbacks=[stoppingCondition, checkpoint],
 			epochs=1,
 			steps_per_epoch = 32,
 			batch_size=32,

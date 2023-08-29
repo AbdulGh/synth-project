@@ -24,7 +24,7 @@ public:
     void setWaveForm(waveform type);
     void setFilterParameters(float cutoff, float resonance);
     void setFilterADSR(float attackTime, float decayTime, float sustainLevel, float releaseTime);
-    void setFilterLFOParameters(float frequency, float intensity);
+    void setFilterLFO(float frequency, float intensity);
     void setVibrato(float frequency, float intensity);
 
     std::unique_ptr<StkFrames> synthesize();

@@ -1,4 +1,5 @@
 #include "Synth.h"
+#include "Config.h"
 
 #include "./stk/BiQuad.h"
 #include "./stk/Oscillator.h"
@@ -13,7 +14,7 @@ Synth::Synth(waveform waveType)
     setWaveForm(waveType);
 }
 
-std::unique_ptr<StkFrames> Synth::synthesize(unsigned int framesToGenerate) 
+std::unique_ptr<StkFrames> Synth::synthesize() 
 {
     ADSR filterEnv = ADSR(); //todo no need to remake this each synthesis
     filterEnv.setAllTimes(fAttackTime, fDecayTime, fSustainLevel, fReleaseTime);

@@ -69,7 +69,7 @@ def generateBatch():
 def generateValidationSet():
 	print("generating validation data")
 	datapath = os.path.abspath("./validationdata")
-	subprocess.run(f"{SYNTHESIZER_PATH} 200 {datapath}", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+	subprocess.run(f"{SYNTHESIZER_PATH} 600 {datapath}", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 	return processWavs(datapath)
 
 #defining the model
@@ -78,16 +78,19 @@ from keras.layers import Input, Conv2D, Dense, MaxPooling2D, Flatten, Softmax
 from keras.losses import CategoricalCrossentropy, MeanSquaredError
 def getModel():
 	inputLayer = Input(shape=(len(WAVELET_SCALES), NUM_DCT_COEFFICIENTS, 1))
-	conv1 = Conv2D(16, (2,3), activation="relu")(inputLayer)
-	pool1 = MaxPooling2D(pool_size=(3, 3), strides=(2,2), padding="valid")(conv1)
-	conv2 = Conv2D(32, (2,2), activation="relu")(pool1)
-	pool2 = MaxPooling2D(pool_size=(3, 3), strides=(2,2), padding="valid")(conv2)
-	conv3 = Conv2D(64, (2,2), activation="relu")(pool2)
+	conv1 = Conv2D(16, (3,3), strides=(2,2), activation="relu")(inputLayer)
+	pool1 = MaxPooling2D(pool_size=(3,3), strides=(2,2), padding="same")(conv1)
+	conv2 = Conv2D(32, (2,2), strides=(1,1), activation="relu")(pool1)
+	pool2 = MaxPooling2D(pool_size=(3,3), strides=(2,2), padding="same")(conv2)
+	conv3 = Conv2D(64, (2,2), strides=(1,1), activation="relu", padding="same")(pool2)
+	conv4 = Conv2D(128, (2,2), strides=(1,1), activation="relu", padding="same")(conv3)
 	#flatten and then bifurcate the network into the classification and regression parts
-	flat = Flatten()(conv3)
-	classDense1 = Dense(min(flat.shape[1] // 4, NUM_WAVES * 4), activation="relu")(flat)
-	classDense2 = Dense(NUM_WAVES, activation="relu")(classDense1)
-	classOutput = Softmax(name="classout")(classDense2)
+	flat = Flatten()(conv4)
+	print(flat.shape[1])
+	classDense1 = Dense(min(flat.shape[1] // 2, NUM_WAVES * 4), activation="relu")(flat)
+	classDense2 = Dense(min(flat.shape[1] // 4, NUM_WAVES * 2), activation="relu")(classDense1)
+	classDense3 = Dense(NUM_WAVES, activation="relu")(classDense2)
+	classOutput = Softmax(name="classout")(classDense3)
 	regressionDense1 = Dense(min(flat.shape[1] // 4, NUM_OTHER_FEATURES * 4), activation="relu")(flat)
 	regressionOutput = Dense(NUM_OTHER_FEATURES, name="regressionout", activation="relu")(regressionDense1)
 
@@ -111,7 +114,7 @@ from keras.callbacks import EarlyStopping
 import pickle
 def run():
 	#the goal is even to 'overfit' the generator, but we still could do with a stopping condition
-	stoppingCondition = EarlyStopping(monitor="val_loss", patience=10, restore_best_weights=True)
+	stoppingCondition = EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True)
 	model = getModel()
 	validationData = generateValidationSet()
 	
@@ -124,7 +127,7 @@ def run():
 			epochs=1,
 			steps_per_epoch = 32,
 			batch_size=32,
-			verbose=1
+			verbose=2
 		)
 
 		if stoppingCondition.stopped_epoch > 0:

@@ -64,7 +64,7 @@ void generateRandomWaveforms(int number, std::string_view directory)
         filenameBase /= std::to_string(i);
 
         //write wave
-        std::unique_ptr<StkFrames> sound = synth.synthesize(framesToGenerate);
+        std::unique_ptr<StkFrames> sound = synth.synthesize();
         FileWvOut waveOut;
         waveOut.openFile(filenameBase.string() + ".wav", 1, FileWrite::FILE_WAV, Stk::STK_SINT16);
         waveOut.tick(*sound);
@@ -77,19 +77,69 @@ void generateRandomWaveforms(int number, std::string_view directory)
     }
 }
 
-int main(int argc, char** argv)
-{
-    if (argc != 3) {
-        std::cout << "USAGE: " << argv[0] << " numberOfSamples directoryToPutThemIn\n";
-        return 0;
+inline int boole(char* zeroOrOne) {
+    return zeroOrOne[0] == 0 ? 0 : 1;
+}
+
+std::unique_ptr<stk::StkFrames> invokeSynthesizer(char** args) {
+    Synth::waveform wave = Synth::waveform::SINE;
+
+    //waves go SINE, SAW, SQUARE
+    for (int i = 0; i < 3; ++i) {
+        if (args[i] == "1") {
+            wave = static_cast<Synth::waveform>(i);
+            break;
+        }
     }
 
-    char* dir = argv[2];
-    int num = std::stoi(argv[1]); //no error handling for now
-    Stk::setSampleRate(sampleRate);
-    Stk::showWarnings(true);
-    srand(time(NULL));
-    generateRandomWaveforms(num, dir);
+    Synth synth{wave};
+    synth.setPitch(std::stof(args[3]));
+    synth.setFilterParameters(
+        std::stof(args[4]),
+        std::stof(args[5])
+    );
+    synth.setFilterADSR(
+        std::stof(args[6]),
+        std::stof(args[7]),
+        std::stof(args[8]),
+        std::stof(args[9])
+    );
+    synth.setFilterLFOParameters(
+        std::stof(args[10]),
+        std::stof(args[11])
+    );
+    synth.setVibrato(
+        std::stof(args[12]),
+        std::stof(args[13])
+    );
+
+    return synth.synthesize();
+}
+
+int main(int argc, char** argv)
+{
+    //we dont really do any error checking on these parameters
+    if (argc == 3) {
+        char* dir = argv[2];
+        int num = std::stoi(argv[1]); //no error handling for now
+        Stk::setSampleRate(sampleRate);
+        Stk::showWarnings(true);
+        srand(time(NULL));
+        generateRandomWaveforms(num, dir);
+    }
+    else if (argc == 16) {
+        std::unique_ptr<stk::StkFrames> sound = invokeSynthesizer(argv + 1);
+        FileWvOut waveOut;
+        waveOut.openFile(argv[14], 1, FileWrite::FILE_WAV, Stk::STK_SINT16);
+        waveOut.tick(*sound);
+        waveOut.closeFile();
+        sound.reset();
+    }
+    else {
+        std::cout << "USAGE: " << argv[0] << " numberofexamples directory\n";
+        std::cout << "USAGE: " << argv[0] << " (14 parameters) outputfile\n";
+        return 0;
+    }
 
 	return 0;
 }

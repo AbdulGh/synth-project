@@ -27,7 +27,7 @@ public:
     void setFilterLFOParameters(float frequency, float intensity);
     void setVibrato(float frequency, float intensity);
 
-    std::unique_ptr<StkFrames> synthesize(unsigned int framesToGenerate);
+    std::unique_ptr<StkFrames> synthesize();
     friend std::ostream& operator<<(std::ostream& os, const Synth& obj);
 
 private:

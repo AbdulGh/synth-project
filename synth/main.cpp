@@ -28,9 +28,11 @@ void generateRandomWaveforms(int number, std::string_view directory)
         //choose a waveform and pitch
         float pitch = notesFromA4(rand() % 12, rand() % 2);
         Synth::waveform waveChoice = static_cast<Synth::waveform>(rand() % 3);
+
+        //int filterOn = static_cast<int>(ceil((rand() % 5) / 5));
         
         //filter parameters
-        int filterCutoff = static_cast<int>(rand() % static_cast<int>(ceil(pitch)));
+        int filterCutoff = static_cast<int>(rand() % static_cast<int>(ceil(2 * pitch)));
         float filterResonance = uniformSample();
 
         //filter envelope
@@ -51,6 +53,7 @@ void generateRandomWaveforms(int number, std::string_view directory)
 
         //put that all into a synth
         Synth synth{waveChoice};
+        synth.setFilterOn(true); //todo allow for unfiltered waves
         synth.setPitch(pitch);
         synth.setWaveForm(waveChoice);
         synth.setFilterParameters(filterCutoff, filterResonance);
@@ -85,7 +88,7 @@ std::unique_ptr<stk::StkFrames> invokeSynthesizer(char** args) {
 
     //waves go SINE, SAW, SQUARE
     for (int i = 0; i < 3; ++i) {
-        if (args[i] == "1") {
+        if (args[i][0] == '1') {
             wave = static_cast<Synth::waveform>(i);
             break;
         }
@@ -129,14 +132,14 @@ int main(int argc, char** argv)
     else if (argc == 16) {
         std::unique_ptr<stk::StkFrames> sound = invokeSynthesizer(argv + 1);
         FileWvOut waveOut;
-        waveOut.openFile(argv[14], 1, FileWrite::FILE_WAV, Stk::STK_SINT16);
+        waveOut.openFile(argv[15], 1, FileWrite::FILE_WAV, Stk::STK_SINT16);
         waveOut.tick(*sound);
         waveOut.closeFile();
         sound.reset();
     }
     else {
         std::cout << "USAGE: " << argv[0] << " numberofexamples directory\n";
-        std::cout << "USAGE: " << argv[0] << " (14 parameters) outputfile\n";
+        std::cout << "or: " << argv[0] << " (14 parameters) outputfile\n";
         return 0;
     }
 

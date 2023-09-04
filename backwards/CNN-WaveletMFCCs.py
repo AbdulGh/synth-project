@@ -10,14 +10,15 @@ from scipy.fftpack import dct
 import pickle
 
 EXAMPLES_PER_BATCH = 32
-WAVELET_NAME = "mexh"
-WAVELET_SCALES = np.arange(0.5, 30, 0.5)  
+WAVELET_NAME = "gaus4"
+WAVELET_SCALES = np.arange(0.5, 32, 0.5)  
 SAMPLE_RATE = 24000
 SAMPLES_PER_EXAMPLE = SAMPLE_RATE * 4
 NUM_WAVES = 3
-NUM_MELS = 64
+NUM_MELS = 32
 NUM_OTHER_FEATURES = 11
-NUM_DCT_COEFFICIENTS = 32
+#NUM_DCT_COEFFICIENTS = 6
+NUM_FRAMES = 200
 SYNTHESIZER_PATH = "C:\\Users\\abdulg\\source\\repos\\Synth\\out\\build\\x64-debug\\synth.exe"
 
 """
@@ -72,22 +73,24 @@ def getFilterBank():
 
 	return np.asarray([melFilter(i) for i in range(NUM_MELS)])
 
+def MFCCs(wave):
+	scaleo = np.abs(pywt.cwt(wave, WAVELET_SCALES, WAVELET_NAME)[0])
+	melScaleo = np.matmul(fbank, scaleo)**2
+	logMelScaleo = librosa.power_to_db(melScaleo)
+	return dct(logMelScaleo, type=2, axis=1, norm="ortho")[:, 1]
+	
+frameMarkers = np.linspace(0, SAMPLES_PER_EXAMPLE, NUM_FRAMES, endpoint=False, dtype=int)[1:]
 fbank = getFilterBank()
 def processWavs(datapath):
 	patchFiles = sorted(glob.glob(os.path.join(datapath, "*.txt")))
 	waveFiles = sorted(glob.glob(os.path.join(datapath, "*.wav")))
 	rawParams = [np.loadtxt(patchFile) for patchFile in patchFiles]
 	waves = [librosa.load(waveFile, sr=SAMPLE_RATE, dtype=np.float32)[0] for waveFile in waveFiles]
-	print(len(waves))
-	print("calculating scaleograms")
-	scaleograms = [pywt.cwt(wave, WAVELET_SCALES, WAVELET_NAME)[0] for wave in waves]
-	print("applying mel filterbank")
-	melScaleograms = [np.abs(np.matmul(fbank, scaleo))**2 for scaleo in scaleograms]
-	print("converting to decibels")
-	melLogScaleograms = [librosa.power_to_db(melScaleo) for melScaleo in melScaleograms]
+	allFrames = [np.split(wave, frameMarkers) for wave in waves]
+	features = [np.asarray([MFCCs(frame) for frame in framedSample]) for framedSample in allFrames]
 
 	return (
-		np.asarray([dct(mls, type=2, axis=1, norm="ortho")[:, :NUM_DCT_COEFFICIENTS] for mls in melLogScaleograms]),
+		np.asarray(features),
 		np.split( #split to separate the categorisation from the rest
 			[normaliseParams(params) for params in rawParams],
 			[NUM_WAVES],
@@ -115,30 +118,30 @@ def generateValidationSet():
 	file = open('./lastvalidation.pkl', 'wb')
 	pickle.dump(wavs, file)
 	file.close()
-	#file = open('./lastvalidation.pkl', 'wb')
-	#stuff = pickle.load(file)
+	#file = open('./lastvalidation.pkl', 'rb')
+	#wavs = pickle.load(file)
 	#file.close()
-	return wavs #stuff
+	return wavs
 
 #defining the model
 from keras.models import Model
 from keras.layers import Input, Conv2D, Dense, AveragePooling2D, Flatten, Softmax
 from keras.losses import CategoricalCrossentropy, MeanSquaredError
 def getModel():
-	inputLayer = Input(shape=(NUM_MELS, NUM_DCT_COEFFICIENTS, 1))
-	conv1 = Conv2D(64, (4,4), strides=(1,1), activation="sigmoid")(inputLayer)
-	conv2 = Conv2D(128, (4,4), strides=(2,2), activation="relu")(conv1)
-	conv3 = Conv2D(256, (4,4), strides=(2,2), activation="relu", padding="same")(conv2)
-	#conv5 = Conv2D(256, (3,3), strides=(1,1), activation="relu", padding="same")(conv4)
+	inputLayer = Input(shape=((NUM_FRAMES, NUM_MELS, 1))) #todo try different channels?
+	conv1 = Conv2D(16, (3,3), strides=(2,2), activation="relu")(inputLayer)
+	conv2 = Conv2D(32, (3,3), strides=(2,2), activation="relu")(conv1)
+	conv3 = Conv2D(64, (3,3), strides=(2,2), activation="relu", padding="same")(conv2)
+	conv4 = Conv2D(128, (3,3), strides=(2,2), activation="relu", padding="same")(conv3)
+	conv5 = Conv2D(128, (3,3), strides=(2,2), activation="relu", padding="same")(conv4)
 	#flatten and then bifurcate the network into the classification and regression parts
-	flat = Flatten()(conv3)
+	flat = Flatten()(conv5)
 	print(flat.shape[1])
 	classDense1 = Dense(min(flat.shape[1] // 2, NUM_WAVES * 4), activation="relu")(flat)
-	classDense2 = Dense(min(flat.shape[1] // 4, NUM_WAVES * 2), activation="relu")(classDense1)
-	classDense3 = Dense(NUM_WAVES, activation="relu")(classDense2)
+	classDense3 = Dense(NUM_WAVES, activation="relu")(classDense1)
 	classOutput = Softmax(name="classout")(classDense3)
 	regressionDense1 = Dense(min(flat.shape[1] // 4, NUM_OTHER_FEATURES * 4), activation="relu")(flat)
-	regressionOutput = Dense(NUM_OTHER_FEATURES, name="regressionout", activation="sigmoid")(regressionDense1)
+	regressionOutput = Dense(NUM_OTHER_FEATURES, name="regressionout", activation="relu")(regressionDense1)
 
 	model = Model(
 		inputs = [inputLayer],
@@ -181,7 +184,7 @@ def run():
 			epochs=1,
 			steps_per_epoch = 32,
 			batch_size=32,
-			verbose=1
+			verbose=2
 		)
 
 		if stoppingCondition.stopped_epoch > 0:
@@ -194,5 +197,4 @@ def run():
 
 if __name__ == "__main__":
 	print("running")
-	model = run()
-	model.save("C:\\Users\\abdulg\\Desktop\\waves\\attempt1.keras")
+	run()

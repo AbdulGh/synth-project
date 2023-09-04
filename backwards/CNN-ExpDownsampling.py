@@ -6,6 +6,7 @@ import glob
 import pywt
 import librosa
 import subprocess
+from numpy.lib.scimath import logn
 
 EXAMPLES_PER_BATCH = 32
 WAVELET_NAME = "mexh"
@@ -14,6 +15,9 @@ SAMPLE_RATE = 24000
 SAMPLES_PER_EXAMPLE = SAMPLE_RATE * 4
 NUM_WAVES = 3
 NUM_OTHER_FEATURES = 11
+BASE = 1.01
+PREFIX = 500
+LOGSCALED_WIDTH = int(logn(BASE, SAMPLES_PER_EXAMPLE))
 SYNTHESIZER_PATH = "C:\\Users\\abdulg\\source\\repos\\Synth\\out\\build\\x64-debug\\synth.exe"
 
 """
@@ -38,15 +42,29 @@ PARAMETER_RANGE = np.asarray([1, 1, 1, 1661.22, 3322, 1, 1, 1, 1, 1, 8, 0.5, 8, 
 def normaliseParams(params):
 	return (params - PARAMETER_LBS)/PARAMETER_RANGE
 
+STOPPING_POINT = 0
+for i in range(1, SAMPLES_PER_EXAMPLE):
+	if i + BASE ** i >= SAMPLES_PER_EXAMPLE - PREFIX:
+		STOPPING_POINT = i - 1
+		break
+
+def logScaleImage(image):
+	indices = [i + int(BASE ** i) for i in range(1, STOPPING_POINT)]
+	splitImage = np.split(image, indices, axis=1) #inhomogeneous :(
+	return np.asarray([
+		[np.mean(frame) for frame in imageFrame] for imageFrame in splitImage
+	]).T
+
 def processWavs(datapath):
 	patchFiles = sorted(glob.glob(os.path.join(datapath, "*.txt")))
 	waveFiles = sorted(glob.glob(os.path.join(datapath, "*.wav")))
-	waves = [librosa.load(waveFile, sr=SAMPLE_RATE, dtype=np.float32)[0] for waveFile in waveFiles]
+	waves = [librosa.load(waveFile, sr=SAMPLE_RATE, dtype=np.float32)[0][PREFIX:] for waveFile in waveFiles]
 	scaleograms = [pywt.cwt(wave, WAVELET_SCALES, WAVELET_NAME)[0] for wave in waves]
+	scaledScaleos = [logScaleImage(scaleo) for scaleo in scaleograms]
 	rawParams = [np.loadtxt(patchFile) for patchFile in patchFiles]
 
 	return (
-		np.asarray(scaleograms),
+		np.asarray(scaledScaleos),
 		np.split( #split to separate the categorisation from the rest
 			[normaliseParams(params) for params in rawParams],
 			[NUM_WAVES],
@@ -75,16 +93,14 @@ from keras.models import Model
 from keras.layers import Input, Conv2D, Dense, AveragePooling2D, Flatten, Softmax
 from keras.losses import CategoricalCrossentropy, MeanSquaredError
 def getModel():
-	inputLayer = Input(shape=(len(WAVELET_SCALES), SAMPLES_PER_EXAMPLE, 1))
-	pool0 = AveragePooling2D(pool_size=(1,20), strides=(1,20), padding="same")(inputLayer)
-	conv1 = Conv2D(16, (3,8), strides=(2,6), activation="relu")(pool0)
-	pool1 = AveragePooling2D(pool_size=(1,8), strides=(1,7), padding="same")(conv1)
-	conv2 = Conv2D(32, (3,7), strides=(1,6), activation="relu")(pool1)
-	pool2 = AveragePooling2D(pool_size=(1,5), strides=(1,4), padding="same")(conv2)
-	conv3 = Conv2D(64, (2,3), strides=(2,2), activation="relu", padding="same")(pool2)
-	conv4 = Conv2D(128, (2,2), strides=(1,1), activation="relu", padding="same")(conv3)
+	inputLayer = Input(shape=(len(WAVELET_SCALES), LOGSCALED_WIDTH, 1)) #todo try different channels?
+	conv1 = Conv2D(16, (3,3), strides=(2,2), activation="relu")(inputLayer)
+	conv2 = Conv2D(32, (3,3), strides=(2,2), activation="relu")(conv1)
+	conv3 = Conv2D(64, (3,3), strides=(2,2), activation="relu", padding="same")(conv2)
+	conv4 = Conv2D(128, (3,3), strides=(2,2), activation="relu", padding="same")(conv3)
+	conv5 = Conv2D(128, (3,3), strides=(2,2), activation="relu", padding="same")(conv4)
 	#flatten and then bifurcate the network into the classification and regression parts
-	flat = Flatten()(conv4)
+	flat = Flatten()(conv5)
 	print(flat.shape[1])
 	classDense1 = Dense(min(flat.shape[1] // 2, NUM_WAVES * 4), activation="relu")(flat)
 	classDense2 = Dense(min(flat.shape[1] // 4, NUM_WAVES * 2), activation="relu")(classDense1)
@@ -108,6 +124,7 @@ def getModel():
 	)
 
 	return model
+
 
 from keras.callbacks import EarlyStopping, ModelCheckpoint
 import pickle

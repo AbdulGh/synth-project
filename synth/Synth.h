@@ -22,7 +22,6 @@ public:
 
     void setPitch(float newPitch);
     void setWaveForm(waveform type);
-    void setFilterOn(bool filterOn);
     void setFilterParameters(float cutoff, float resonance);
     void setFilterADSR(float attackTime, float decayTime, float sustainLevel, float releaseTime);
     void setFilterLFO(float frequency, float intensity);

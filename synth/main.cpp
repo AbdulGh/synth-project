@@ -53,7 +53,6 @@ void generateRandomWaveforms(int number, std::string_view directory)
 
         //put that all into a synth
         Synth synth{waveChoice};
-        synth.setFilterOn(true); //todo allow for unfiltered waves
         synth.setPitch(pitch);
         synth.setWaveForm(waveChoice);
         synth.setFilterParameters(filterCutoff, filterResonance);

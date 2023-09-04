@@ -29,25 +29,16 @@ std::unique_ptr<StkFrames> Synth::synthesize()
 
     std::unique_ptr<StkFrames> outputFrames = std::make_unique<StkFrames>(framesToGenerate, 1);
 
-    std::function<void(int)> tick;
-    if (filterOn) {
-        tick = [&](int frame) {
-            generator->setFrequency(pitch * (1 + pModInt * vibrato.tick()));
-            filter.setLowPass(
-                filterEnv.tick() * filterCutoff * (1 + fModInt * filterLFO.tick()),
-                filterResonance
-            );
-            (*outputFrames)[frame] = filter.tick(
-                generator->tick()
-            );
-        };
-    }
-    else {
-        tick = [&](int frame) {
-            generator->setFrequency(pitch * (1 + pModInt * vibrato.tick()));
-            (*outputFrames)[frame] = generator->tick();
-        };
-    }
+    std::function<void(int)> tick = [&](int frame) {
+        generator->setFrequency(pitch * (1 + pModInt * vibrato.tick()));
+        filter.setLowPass(
+            filterEnv.tick() * filterCutoff * (1 + fModInt * filterLFO.tick()),
+            filterResonance
+        );
+        (*outputFrames)[frame] = filter.tick(
+            generator->tick()
+        );
+    };
 
     int frame;
     filterEnv.keyOn();
@@ -108,11 +99,6 @@ void Synth::setWaveForm(waveform type) {
     }
 }
 
-void Synth::setFilterOn(bool setting)
-{
-    filterOn = setting;
-}
-
 std::ostream& operator<<(std::ostream& os, const Synth& syn)
 {
     std::function<void(float)> writeParameter = [&os](float toWrite) 
@@ -120,8 +106,7 @@ std::ostream& operator<<(std::ostream& os, const Synth& syn)
         os << std::to_string(toWrite) << " ";
     };
 
-    os << syn.waveFormEncodings[syn.wave] << " ";
-    //os << syn.filterOn ? "1 " : "0 ";
+    os << syn.waveFormEncodings[syn.wave] << " "; 
     writeParameter(syn.pitch);
     writeParameter(syn.filterCutoff);
     writeParameter(syn.filterResonance);

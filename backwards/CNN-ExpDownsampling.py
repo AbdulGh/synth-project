@@ -17,7 +17,6 @@ NUM_WAVES = 3
 NUM_OTHER_FEATURES = 11
 BASE = 1.01
 PREFIX = 500
-LOGSCALED_WIDTH = int(logn(BASE, SAMPLES_PER_EXAMPLE))
 SYNTHESIZER_PATH = "C:\\Users\\abdulg\\source\\repos\\Synth\\out\\build\\x64-debug\\synth.exe"
 
 """
@@ -60,7 +59,7 @@ def processWavs(datapath):
 	waveFiles = sorted(glob.glob(os.path.join(datapath, "*.wav")))
 	waves = [librosa.load(waveFile, sr=SAMPLE_RATE, dtype=np.float32)[0][PREFIX:] for waveFile in waveFiles]
 	scaleograms = [pywt.cwt(wave, WAVELET_SCALES, WAVELET_NAME)[0] for wave in waves]
-	scaledScaleos = [logScaleImage(scaleo) for scaleo in scaleograms]
+	scaledScaleos = [logScaleImage(scaleo) for scaleo in scaleograms] #[..., np.newaxis]
 	rawParams = [np.loadtxt(patchFile) for patchFile in patchFiles]
 
 	return (
@@ -93,7 +92,7 @@ from keras.models import Model
 from keras.layers import Input, Conv2D, Dense, AveragePooling2D, Flatten, Softmax
 from keras.losses import CategoricalCrossentropy, MeanSquaredError
 def getModel():
-	inputLayer = Input(shape=(len(WAVELET_SCALES), LOGSCALED_WIDTH, 1)) #todo try different channels?
+	inputLayer = Input(shape=(len(WAVELET_SCALES), STOPPING_POINT, 1)) #todo try different channels?
 	conv1 = Conv2D(16, (3,3), strides=(2,2), activation="relu")(inputLayer)
 	conv2 = Conv2D(32, (3,3), strides=(2,2), activation="relu")(conv1)
 	conv3 = Conv2D(64, (3,3), strides=(2,2), activation="relu", padding="same")(conv2)
@@ -103,8 +102,7 @@ def getModel():
 	flat = Flatten()(conv5)
 	print(flat.shape[1])
 	classDense1 = Dense(min(flat.shape[1] // 2, NUM_WAVES * 4), activation="relu")(flat)
-	classDense2 = Dense(min(flat.shape[1] // 4, NUM_WAVES * 2), activation="relu")(classDense1)
-	classDense3 = Dense(NUM_WAVES, activation="relu")(classDense2)
+	classDense3 = Dense(NUM_WAVES, activation="relu")(classDense1)
 	classOutput = Softmax(name="classout")(classDense3)
 	regressionDense1 = Dense(min(flat.shape[1] // 4, NUM_OTHER_FEATURES * 4), activation="relu")(flat)
 	regressionOutput = Dense(NUM_OTHER_FEATURES, name="regressionout", activation="relu")(regressionDense1)

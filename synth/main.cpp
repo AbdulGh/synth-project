@@ -11,45 +11,73 @@
 #include <functional>
 #include <cmath>
 #include <string>
+#include <random>
 
-using namespace stk;
+using namespace std;
 
+//random real between 0 and 0.1
 inline float uniformSample () {
-    return static_cast<float>(rand() / static_cast<float>(RAND_MAX));
+    return static_cast<float>(rand()) / (10.0 * RAND_MAX);
 }
 
-inline float notesFromA4(int note, int octave) {
-    return 440.0f * pow(2, octave + note / 12.0f);
+inline float notesFromA4(int note) {
+    return 440.0f * pow(2, note / 12.0f);
 }
 
-void generateRandomWaveforms(int number, std::string_view directory)
+void generateRandomWaveforms(int number, string_view directory, unique_ptr<array<float, 3>> waveProbs = NULL, unique_ptr<array<array<float, 10>,11>> paramProbs = NULL)
 {
-    for (int i = 0; i < number; ++i) {
-        //choose a waveform and pitch
-        float pitch = notesFromA4(rand() % 12, rand() % 2);
-        Synth::waveform waveChoice = static_cast<Synth::waveform>(rand() % 3);
+    std::random_device rd{};
+    std::mt19937 generator{ rd() };
 
-        //int filterOn = static_cast<int>(ceil((rand() % 5) / 5));
-        
+    function<float(discrete_distribution<int>*)> sampleDistribution = [&generator](discrete_distribution<int>* dist) {
+        return (*dist)(generator) / 10.0f + uniformSample();
+    };
+
+    for (int i = 0; i < number; ++i) {
+        //fill in unspecified probabilities with uniform ones
+        if (waveProbs == NULL) {
+            waveProbs = make_unique<array<float, 3>>();
+            waveProbs->fill(1.0f / 3);
+        }
+        if (paramProbs == NULL) {
+            paramProbs = make_unique<array<array<float, 10>, 11>> ();
+            for (int j = 0; j < 11; ++j) {
+                paramProbs->at(j) = array<float, 10>();
+                paramProbs->at(j).fill(0.1f);
+            }
+        }
+
+        //make numerical probabilities into a bunch of discrete distributions
+        discrete_distribution<int> waveDistribution(waveProbs->begin(), waveProbs->end());
+        array<discrete_distribution<int>, 11> continuousDistributions;
+        for (int j = 0; j < 11; ++j) {
+            continuousDistributions[j] = discrete_distribution<int>(paramProbs->at(j).begin(), paramProbs->at(j).end());
+        }
+
+        Synth::waveform waveChoice = static_cast<Synth::waveform>(waveDistribution(generator));
+
+        //choose a waveform and pitch
+        float pitch = notesFromA4(24 * sampleDistribution(&continuousDistributions[0]));
+
         //filter parameters
-        int filterCutoff = static_cast<int>(rand() % static_cast<int>(ceil(2 * pitch)));
-        float filterResonance = uniformSample();
+        int filterCutoff = 2 * pitch * sampleDistribution(&continuousDistributions[1]);
+        float filterResonance = sampleDistribution(&continuousDistributions[2]);
 
         //filter envelope
-        float fAttack = duration * uniformSample() / 4;
-        float fDecay = duration * uniformSample() / 4;
-        float fSustain = (rand() % 5) ? uniformSample() : 0; //rand() because zero sustain level is very unlikely otherwise, but we'd like to have some examples of this
-        float fRelease = duration * uniformSample() / 4; //todo consider setting this to some fixed value if no sustain, for the CNN
+        float fAttack = duration * sampleDistribution(&continuousDistributions[3]) / 4;
+        float fDecay = duration * sampleDistribution(&continuousDistributions[4]) / 4;
+        float fSustain = (rand() % 5) ? sampleDistribution(&continuousDistributions[5]) : 0; //rand() because zero sustain level is very unlikely otherwise, but we'd like to have some examples of this
+        float fRelease = duration * sampleDistribution(&continuousDistributions[6]) / 4; //todo consider setting this to some fixed value if no sustain, for the CNN
 
         //filter modulation
         int filterModulated = rand() % 2;
-        float fModFreq = filterModulated * uniformSample() * 8;
-        float fModInt = filterModulated * uniformSample() / 2;
+        float fModFreq = filterModulated * sampleDistribution(&continuousDistributions[7]) * 8;
+        float fModInt = filterModulated * sampleDistribution(&continuousDistributions[8]) / 2;
 
         //vibrato
         int pitchModulated = rand() % 2;
-        float pModFreq = pitchModulated * uniformSample() * 8;
-        float pModInt = pitchModulated * uniformSample() / 32;
+        float pModFreq = pitchModulated * sampleDistribution(&continuousDistributions[9]) * 8;
+        float pModInt = pitchModulated * sampleDistribution(&continuousDistributions[10]) / 32;
 
         //put that all into a synth
         Synth synth{waveChoice};
@@ -59,13 +87,13 @@ void generateRandomWaveforms(int number, std::string_view directory)
         synth.setFilterADSR(fAttack, fDecay, fSustain, fRelease);
         synth.setFilterLFO(fModFreq, fModInt);
         synth.setVibrato(pModFreq, pModInt);
-        
+
         //too embarrased to admit that im using windows
-        std::filesystem::path filenameBase(directory);
-        filenameBase /= std::to_string(i);
+        filesystem::path filenameBase(directory);
+        filenameBase /= to_string(i);
 
         //write wave
-        std::unique_ptr<StkFrames> sound = synth.synthesize();
+        unique_ptr<StkFrames> sound = synth.synthesize();
         FileWvOut waveOut;
         waveOut.openFile(filenameBase.string() + ".wav", 1, FileWrite::FILE_WAV, Stk::STK_SINT16);
         waveOut.tick(*sound);
@@ -73,7 +101,7 @@ void generateRandomWaveforms(int number, std::string_view directory)
         sound.reset();
 
         //write parameters
-        std::ofstream parametersOut(filenameBase.string() + ".txt");
+        ofstream parametersOut(filenameBase.string() + ".txt");
         parametersOut << synth;
     }
 }
@@ -82,7 +110,7 @@ inline int boole(char* zeroOrOne) {
     return zeroOrOne[0] == 0 ? 0 : 1;
 }
 
-std::unique_ptr<stk::StkFrames> invokeSynthesizer(char** args) {
+unique_ptr<stk::StkFrames> invokeSynthesizer(char** args) {
     Synth::waveform wave = Synth::waveform::SINE;
 
     //waves go SINE, SAW, SQUARE
@@ -94,24 +122,24 @@ std::unique_ptr<stk::StkFrames> invokeSynthesizer(char** args) {
     }
 
     Synth synth{wave};
-    synth.setPitch(std::stof(args[3]));
+    synth.setPitch(stof(args[3]));
     synth.setFilterParameters(
-        std::stof(args[4]),
-        std::stof(args[5])
+        stof(args[4]),
+        stof(args[5])
     );
     synth.setFilterADSR(
-        std::stof(args[6]),
-        std::stof(args[7]),
-        std::stof(args[8]),
-        std::stof(args[9])
+        stof(args[6]),
+        stof(args[7]),
+        stof(args[8]),
+        stof(args[9])
     );
     synth.setFilterLFO(
-        std::stof(args[10]),
-        std::stof(args[11])
+        stof(args[10]),
+        stof(args[11])
     );
     synth.setVibrato(
-        std::stof(args[12]),
-        std::stof(args[13])
+        stof(args[12]),
+        stof(args[13])
     );
 
     return synth.synthesize();
@@ -122,14 +150,14 @@ int main(int argc, char** argv)
     //we dont really do any error checking on these parameters
     if (argc == 3) {
         char* dir = argv[2];
-        int num = std::stoi(argv[1]); //no error handling for now
+        int num = stoi(argv[1]); //no error handling for now
         Stk::setSampleRate(sampleRate);
         Stk::showWarnings(true);
         srand(time(NULL));
         generateRandomWaveforms(num, dir);
     }
     else if (argc == 16) {
-        std::unique_ptr<stk::StkFrames> sound = invokeSynthesizer(argv + 1);
+        unique_ptr<stk::StkFrames> sound = invokeSynthesizer(argv + 1);
         FileWvOut waveOut;
         waveOut.openFile(argv[15], 1, FileWrite::FILE_WAV, Stk::STK_SINT16);
         waveOut.tick(*sound);
@@ -137,8 +165,8 @@ int main(int argc, char** argv)
         sound.reset();
     }
     else {
-        std::cout << "USAGE: " << argv[0] << " numberofexamples directory\n";
-        std::cout << "or: " << argv[0] << " (14 parameters) outputfile\n";
+        cout << "USAGE: " << argv[0] << " numberofexamples directory\n";
+        cout << "or: " << argv[0] << " (14 parameters) outputfile\n";
         return 0;
     }
 

@@ -140,30 +140,75 @@ def generateValidationSet():
 from keras.models import Model
 from keras.layers import Input, Conv2D, Dense, AveragePooling2D, Flatten, Softmax, BatchNormalization
 from keras.losses import CategoricalCrossentropy, MeanSquaredError, MeanAbsolutePercentageError
-from keras.backend import set_image_data_format
+from keras.backend import set_image_data_format, learning_phase
+
+from keras import Model
+from keras.losses import CategoricalCrossentropy, MeanSquaredError
+class AdaptiveTraining(Model):
+	def __init__(self, **kwargs):
+		#self.catLoss = CategoricalCrossentropy(from_logits=False)
+		#self.predLoss = MeanSquaredError()
+		self.batchProbabilities = [
+			np.full(NUM_WAVES, 1 / NUM_WAVES),
+			np.full((NUM_OTHER_FEATURES, 10), 1 / (10 * NUM_OTHER_FEATURES))
+		]
+
+		set_image_data_format("channels_last")
+		inputLayer = Input(shape=((NUM_FRAMES, fbank.shape[0], NUM_DCT_COEFFICIENTS * 2)))
+		normalisation = BatchNormalization()(inputLayer)
+		conv1 = Conv2D(48, (5,3), strides=(2,1), activation="relu", padding="valid")(normalisation)
+		conv2 = Conv2D(64, (5,3), strides=(2,1), activation="relu", padding="valid")(conv1)
+		conv3 = Conv2D(64, (5,3), strides=(2,1), activation="relu", padding="valid")(conv2)
+		conv4 = Conv2D(96, (5,3), strides=(2,2), activation="relu", padding="valid")(conv3)
+		#flatten and then bifurcate the network into the classification and regression parts
+		flat = Flatten()(conv4)
+		dense = Dense(flat.shape[1] * 4 // 5, activation="relu")(flat)
+		classDense1 = Dense(max(flat.shape[1] * 2 // 3, NUM_WAVES * 4), activation="relu")(dense)
+		classDense2 = Dense(NUM_WAVES, activation="relu")(classDense1)
+		classOutput = Softmax(name="classout")(classDense2)
+		regressionDense1 = Dense(max(flat.shape[1] * 2 // 3, NUM_OTHER_FEATURES * 4), activation="relu")(dense)
+		regressionOutput = Dense(NUM_OTHER_FEATURES, name="regressionout", activation="relu")(regressionDense1)
+		super(AdaptiveTraining, self).__init__(
+			**kwargs,
+			inputs = [inputLayer],
+			outputs = [classOutput, regressionOutput]
+		)
+
+	def validation_step(self, data):
+		x, y = data.numpy()
+		yPred = self(x, training=False)
+		print(yPred)
+
+		categoricalLosses = np.sum(- y[0] * np.log(yPred[0]), axis=0)
+		categoricalLoss = np.sum(categoricalLosses)
+		self.batchProbabilities[0] = categoricalLosses / categoricalLoss
+		print(f"categorical loss: {self.batchProbabilities[0]}")
+
+		squaredErrors = (y[1] - yPred[1]) ** 2
+		binFeatureErrors = np.apply_along_axis(
+			lambda x: np.bincount(np.floor(10 * x).astype(np.int64), minlength=10),
+			1,
+			squaredErrors.T
+		)
+		self.batchProbabilities[1] = binFeatureErrors / np.sum(binFeatureErrors, axis=1)[:, np.newaxis]
+		print(f"continuous loss: {self.batchProbabilities[1]}")
+
+		# Update the metrics.
+		for metric in self.metrics:
+			if metric.name != "loss":
+				metric.update_state(y, yPred)
+		return super().test_step(self, data) #{m.name: m.result() for m in self.metrics}
+
+	def test_step(self, data):
+		if learning_phase() == 1:
+			print("learning")
+			return super().test_step(self, data)
+		else:
+			print("validating")
+			return self.validation_step(data)
+
 def getModel():
-	set_image_data_format("channels_last")
-	print(fbank.shape)
-	inputLayer = Input(shape=((NUM_FRAMES, fbank.shape[0], NUM_DCT_COEFFICIENTS * 2)))
-	normalisation = BatchNormalization()(inputLayer)
-	conv1 = Conv2D(48, (5,3), strides=(2,1), activation="relu", padding="valid")(normalisation)
-	conv2 = Conv2D(64, (5,3), strides=(2,1), activation="relu", padding="valid")(conv1)
-	conv3 = Conv2D(64, (5,3), strides=(2,1), activation="relu", padding="valid")(conv2)
-	conv4 = Conv2D(96, (5,3), strides=(2,2), activation="relu", padding="valid")(conv3)
-	#flatten and then bifurcate the network into the classification and regression parts
-	flat = Flatten()(conv4)
-	dense = Dense(flat.shape[1] * 4 // 5, activation="relu")(flat)
-	classDense1 = Dense(max(flat.shape[1] * 2 // 3, NUM_WAVES * 4), activation="relu")(dense)
-	classDense2 = Dense(NUM_WAVES, activation="relu")(classDense1)
-	classOutput = Softmax(name="classout")(classDense2)
-	regressionDense1 = Dense(max(flat.shape[1] * 2 // 3, NUM_OTHER_FEATURES * 4), activation="relu")(dense)
-	regressionOutput = Dense(NUM_OTHER_FEATURES, name="regressionout", activation="relu")(regressionDense1)
-
-	model = Model(
-		inputs = [inputLayer],
-		outputs = [classOutput, regressionOutput],
-	)
-
+	model = AdaptiveTraining()
 	model.compile(
 		optimizer="adam",
 		loss={
@@ -189,8 +234,7 @@ def run():
 	#the goal is even to 'overfit' the generator, but we still could do with a stopping condition
 	stoppingCondition = EarlyStopping(monitor="val_loss", patience=3, restore_best_weights=True)
 	model = getModel()
-	print("here")
-	model.load_weights("C:\\Users\\abdulg\\Desktop\\waves\\checkpoint - Copy.keras")
+	#model.load_weights("C:\\Users\\abdulg\\Desktop\\waves\\checkpoint - Copy.keras")
 	model.summary()
 	validationData = generateValidationSet()
 	
@@ -200,8 +244,8 @@ def run():
 			x=generateBatch(), #yields a generator
 			validation_data=validationData,
 			callbacks=[stoppingCondition, checkpoint],
-			epochs=1,
-			steps_per_epoch = 32,
+			epochs=3,
+			#steps_per_epoch = 32,
 			batch_size=32,
 			verbose=2
 		)

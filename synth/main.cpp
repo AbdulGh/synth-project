@@ -179,8 +179,8 @@ int main(int argc, char** argv)
         auto waveProbs = make_unique<array<float, 3>>(parseProbabilities<3>(argv + 2));
 
         auto paramProbs = make_unique<array<array<float, 10>, 11>>();
-        for (int i = 6; i < 110; i += 10) {
-            paramProbs->at(i) = parseProbabilities<10>(argv + i);
+        for (int i = 0; i < 11; ++i) {
+            paramProbs->at(i) = parseProbabilities<10>(argv + 6 + 10 * i);
         }
 
         generateRandomWaveforms(num, dir, move(waveProbs), move(paramProbs));

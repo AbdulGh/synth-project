@@ -111,16 +111,6 @@ def processWavs(datapath):
 		)
 	)
 
-#generate a batch of waves, return their (compressed) scaleograms and features
-def generateBatch():
-	print("generating new batch")
-	datapath = os.path.abspath("./trainingdata")
-	while True:
-		#will overwrite all of the previous batch as examplesPerBatch stays constant
-		#todo - figure out why STK writes a newline to stderr per written file
-		subprocess.run(f"{SYNTHESIZER_PATH} {EXAMPLES_PER_BATCH} {datapath}", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-		yield processWavs(datapath)
-
 def generateValidationSet():
 	print("generating validation data")
 	datapath = os.path.abspath("./validationdata")
@@ -140,17 +130,17 @@ def generateValidationSet():
 from keras.models import Model
 from keras.layers import Input, Conv2D, Dense, AveragePooling2D, Flatten, Softmax, BatchNormalization
 from keras.losses import CategoricalCrossentropy, MeanSquaredError, MeanAbsolutePercentageError
-from keras.backend import set_image_data_format, learning_phase
-
+from keras.backend import set_image_data_format
+from keras.callbacks import Callback, ModelCheckpoint, EarlyStopping
 from keras import Model
 from keras.losses import CategoricalCrossentropy, MeanSquaredError
+
 class AdaptiveTraining(Model):
 	def __init__(self, **kwargs):
-		#self.catLoss = CategoricalCrossentropy(from_logits=False)
-		#self.predLoss = MeanSquaredError()
+		self.training = True
 		self.batchProbabilities = [
 			np.full(NUM_WAVES, 1 / NUM_WAVES),
-			np.full((NUM_OTHER_FEATURES, 10), 1 / (10 * NUM_OTHER_FEATURES))
+			np.full((NUM_OTHER_FEATURES, 10), 1 / 10)
 		]
 
 		set_image_data_format("channels_last")
@@ -168,6 +158,7 @@ class AdaptiveTraining(Model):
 		classOutput = Softmax(name="classout")(classDense2)
 		regressionDense1 = Dense(max(flat.shape[1] * 2 // 3, NUM_OTHER_FEATURES * 4), activation="relu")(dense)
 		regressionOutput = Dense(NUM_OTHER_FEATURES, name="regressionout", activation="relu")(regressionDense1)
+		
 		super(AdaptiveTraining, self).__init__(
 			**kwargs,
 			inputs = [inputLayer],
@@ -177,7 +168,6 @@ class AdaptiveTraining(Model):
 	def validation_step(self, data):
 		x, y = data.numpy()
 		yPred = self(x, training=False)
-		print(yPred)
 
 		categoricalLosses = np.sum(- y[0] * np.log(yPred[0]), axis=0)
 		categoricalLoss = np.sum(categoricalLosses)
@@ -199,66 +189,86 @@ class AdaptiveTraining(Model):
 				metric.update_state(y, yPred)
 				
 		return super().test_step(self, data) #{m.name: m.result() for m in self.metrics}
+	
+	#generate a batch of waves, return their (compressed) scaleograms and features
+	def generateBatch(self):
+		print("generating new batch")
+		datapath = os.path.abspath("./trainingdata")
+		while True:
+			#will overwrite all of the previous batch as examplesPerBatch stays constant
+			#todo - figure out why STK writes a newline to stderr per written file
+			probsString = ' '.join(['%.2f' % prob for prob in self.batchProbabilities[0]]) + ' '
+			probsString += ' '.join(['%.2f' % prob for probs in self.batchProbabilities[1] for prob in probs])
+			print(f"{SYNTHESIZER_PATH} {EXAMPLES_PER_BATCH} {datapath} {probsString}")
+			subprocess.run(
+				f"{SYNTHESIZER_PATH} {EXAMPLES_PER_BATCH} {datapath} {probsString}",
+				stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+			)
+			yield processWavs(datapath)
 
 	def test_step(self, data):
-		if learning_phase() == 1:
+		if self.training:
 			print("learning")
-			return super().test_step(self, data)
+			return super().test_step(data)
 		else:
 			print("validating")
 			return self.validation_step(data)
+		
+	class TrainingStepCallback(Callback):
+		def __init__(self, model):
+			self.model = model
+		def on_epoch_begin(self, epoch, logs=None):
+			print("here 1")
+			self.model.training = True
+		def on_epoch_end(self, epoch, logs=None):
+			print("here 2")
+			self.model.training = False
 
-def getModel():
-	model = AdaptiveTraining()
-	model.compile(
-		optimizer="adam",
-		loss={
-			"classout": CategoricalCrossentropy(from_logits=False),
-			"regressionout": MeanSquaredError(),
-		},
-		metrics=["accuracy"]
-	)
-
-	return model
-
-from keras.callbacks import EarlyStopping, ModelCheckpoint
-import pickle
-def run():
-	checkpoint = ModelCheckpoint(
-		"C:\\Users\\abdulg\\Desktop\\waves\\checkpoint.keras",
-		save_weights_only=True,
-		save_best_only=True,
-		monitor="val_loss",
-		mode="min",
-		save_freq="epoch"
-	)
-	#the goal is even to 'overfit' the generator, but we still could do with a stopping condition
-	stoppingCondition = EarlyStopping(monitor="val_loss", patience=3, restore_best_weights=True)
-	model = getModel()
-	#model.load_weights("C:\\Users\\abdulg\\Desktop\\waves\\checkpoint - Copy.keras")
-	model.summary()
-	validationData = generateValidationSet()
-	
-	history = {}
-	while True:
-		history = model.fit(
-			x=generateBatch(), #yields a generator
-			validation_data=validationData,
-			callbacks=[stoppingCondition, checkpoint],
-			epochs=3,
-			#steps_per_epoch = 32,
-			batch_size=32,
-			verbose=2
+	@staticmethod
+	def run():
+		model = AdaptiveTraining()
+		model.compile(
+			optimizer="adam",
+			loss={
+				"classout": CategoricalCrossentropy(from_logits=False),
+				"regressionout": MeanSquaredError(),
+			},
+			metrics=["accuracy"]
 		)
 
-		if stoppingCondition.stopped_epoch > 0:
-			break
+		trainingCallback = AdaptiveTraining.TrainingStepCallback(model)
 
-	with open("./lastHistory", "wb") as histFile:
-		pickle.dump(history.history, histFile)
+		checkpoint = ModelCheckpoint(
+			"C:\\Users\\abdulg\\Desktop\\waves\\checkpoint.keras",
+			save_weights_only=True,
+			save_best_only=True,
+			monitor="val_loss",
+			mode="min",
+			save_freq="epoch"
+		)
 
-	return model
+		stoppingCondition = EarlyStopping(monitor="val_loss", patience=3, restore_best_weights=True)
 
+		validationData = generateValidationSet()
+		history = {}
+		while True:
+			history = model.fit(
+				x=model.generateBatch(),
+				validation_data=validationData,
+				callbacks=[trainingCallback, stoppingCondition, checkpoint],
+				epochs=1,
+				steps_per_epoch = 32,
+				batch_size=32,
+				verbose=2
+			)
+
+			if stoppingCondition.stopped_epoch > 0:
+				break
+		return history
+
+import pickle
 if __name__ == "__main__":
 	print("running")
-	run()
+	history = AdaptiveTraining.run()
+	with open("./lastHistory", "wb") as histFile:
+		pickle.dump(history.history, histFile)

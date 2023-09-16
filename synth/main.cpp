@@ -145,15 +145,23 @@ unique_ptr<stk::StkFrames> invokeSynthesizer(char** args) {
     return synth.synthesize();
 }
 
+template <unsigned int N> array<float, N> parseProbabilities(char** argStart) {
+    array<float, N> result;
+    for (unsigned int i = 0; i < N; ++i) {
+        result[i] = atof(argStart[i]);
+    }
+    return result;
+}
+
 int main(int argc, char** argv)
 {
+    Stk::setSampleRate(sampleRate);
+    Stk::showWarnings(true);
+
     //we dont really do any error checking on these parameters
     if (argc == 3) {
         char* dir = argv[2];
-        int num = stoi(argv[1]); //no error handling for now
-        Stk::setSampleRate(sampleRate);
-        Stk::showWarnings(true);
-        srand(time(NULL));
+        int num = stoi(argv[1]);
         generateRandomWaveforms(num, dir);
     }
     else if (argc == 16) {
@@ -164,10 +172,21 @@ int main(int argc, char** argv)
         waveOut.closeFile();
         sound.reset();
     }
+    //name, directory, number to generate, 3 waveform probabilities, 10*11 wave probabilities
+    else if (argc == 116) {
+        char* dir = argv[2];
+        int num = stoi(argv[1]);
+        auto waveProbs = make_unique<array<float, 3>>(parseProbabilities<3>(argv + 2));
+
+        auto paramProbs = make_unique<array<array<float, 10>, 11>>();
+        for (int i = 6; i < 110; i += 10) {
+            paramProbs->at(i) = parseProbabilities<10>(argv + i);
+        }
+
+        generateRandomWaveforms(num, dir, move(waveProbs), move(paramProbs));
+    }
     else {
-        cout << "USAGE: " << argv[0] << " numberofexamples directory\n";
-        cout << "or: " << argv[0] << " (14 parameters) outputfile\n";
-        return 0;
+        cout << "USAGE: see source ;)\n";
     }
 
 	return 0;

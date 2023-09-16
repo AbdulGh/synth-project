@@ -197,6 +197,7 @@ class AdaptiveTraining(Model):
 		for metric in self.metrics:
 			if metric.name != "loss":
 				metric.update_state(y, yPred)
+				
 		return super().test_step(self, data) #{m.name: m.result() for m in self.metrics}
 
 	def test_step(self, data):

@@ -26,9 +26,8 @@ inline float notesFromA4(int note) {
 
 void generateRandomWaveforms(int number, string_view directory, unique_ptr<array<float, 3>> waveProbs = NULL, unique_ptr<array<array<float, 10>,11>> paramProbs = NULL)
 {
-    std::random_device rd{};
-    std::mt19937 generator{ rd() };
-
+    random_device rd{};
+    mt19937 generator{ rd() };
     function<float(discrete_distribution<int>*)> sampleDistribution = [&generator](discrete_distribution<int>* dist) {
         return (*dist)(generator) / 10.0f + uniformSample();
     };

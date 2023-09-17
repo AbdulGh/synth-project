@@ -133,16 +133,10 @@ from keras.backend import set_image_data_format
 from keras.callbacks import Callback, ModelCheckpoint, EarlyStopping
 from keras import Model
 from keras.losses import CategoricalCrossentropy, MeanSquaredError
+import tensorflow as tf
 
 class AdaptiveTraining(Model):
-	def __init__(self, validationData, **kwargs):
-		self.training = True
-		self.validationData = validationData
-		self.batchProbabilities = [
-			np.full(NUM_WAVES, 1 / NUM_WAVES),
-			np.full((NUM_OTHER_FEATURES, 10), 1 / 10)
-		]
-
+	def __init__(self, **kwargs):
 		set_image_data_format("channels_last")
 		inputLayer = Input(shape=((NUM_FRAMES, fbank.shape[0], NUM_DCT_COEFFICIENTS * 2)))
 		normalisation = BatchNormalization()(inputLayer)
@@ -159,36 +153,74 @@ class AdaptiveTraining(Model):
 		regressionDense1 = Dense(max(flat.shape[1] * 2 // 3, NUM_OTHER_FEATURES * 4), activation="relu")(dense)
 		regressionOutput = Dense(NUM_OTHER_FEATURES, name="regressionout", activation="relu")(regressionDense1)
 		
-		super(AdaptiveTraining, self).__init__(
+		super().__init__(
 			**kwargs,
 			inputs = [inputLayer],
 			outputs = [classOutput, regressionOutput]
 		)
 
-	def generateProbabilities(self):
-		print("in generateprobabilities")
-		x, y = self.validationData
-		yPred = self.predict(x)
+		self.batchProbabilities = [
+			tf.Variable(tf.fill(NUM_WAVES, 1 / NUM_WAVES), trainable=False, name="waveProbs"),
+			tf.Variable(tf.fill((NUM_OTHER_FEATURES, 10), 1 / 10), trainable=False, name="otherProbs")
+		]
 
-		categoricalLosses = np.sum(- y[0] * np.log(yPred[0]), axis=0)
-		categoricalLoss = np.sum(categoricalLosses)
-		self.batchProbabilities[0] = categoricalLosses / categoricalLoss
-		print(f"categorical loss: {self.batchProbabilities[0]}")
+	@tf.function
+	def test_step(self, data):
+		print("in test_step")
+		x, y = data
+		yPred = self(x, training=False)
 
-		squaredErrors = (y[1] - yPred[1]) ** 2 #shape (n, 11)
-		roundedTargets = np.floor(10 * y[1]).astype(np.int64)
-		probabilities = np.zeros((11, 10))
+		#calculate categorical crossentropy loss and find the "wave-wise" sum
+		categoricalLosses = tf.reduce_sum(- y[0] * tf.math.log(yPred[0]), axis=0)
+		categoricalLossesNormalised = tf.divide(
+			categoricalLosses,
+			tf.reduce_sum(y[0], axis=0) + 0.01
+		)
 
+		self.batchProbabilities[0].assign(
+			tf.divide(
+				categoricalLossesNormalised,
+				tf.reduce_sum(categoricalLossesNormalised)
+			)
+		)
+
+		print("categorical loss:")
+		tf.print(self.batchProbabilities[0])
+
+		squaredErrors = (y[1] - yPred[1]) ** 2
+		#eg 0.67 -> 6, the 6th index in ith row of the probabilites matrix
+		#will be proporitionate to the squared errors in the ith feature when the target was 0.6something
+		roundedTargets = tf.floor(10 * y[1])
+		roundedTargets = tf.cast(roundedTargets, tf.int32)
+
+		probabilities = tf.zeros((NUM_OTHER_FEATURES, 10))
+		indexRange = tf.range(NUM_OTHER_FEATURES)
 		for i in range(len(roundedTargets)):
-			probabilities[np.arange(11), roundedTargets[i]] += squaredErrors[i]
+			indices = tf.transpose(tf.stack([indexRange, roundedTargets[i]])) #zip together the range and the buckets
+			probabilities = tf.tensor_scatter_nd_add(probabilities, indices, squaredErrors[i]) #sparse update
 
-		self.batchProbabilities[1] = probabilities / np.sum(probabilities, axis=1)[:, np.newaxis]
+		#normalise buckets by number of examples
+		numBucketExamples = tf.math.bincount(
+			tf.transpose(roundedTargets),
+			minlength=10, maxlength=10, axis=-1, dtype=tf.float32
+		)
+		probabilities = tf.divide( #broadcasts twice
+			probabilities,
+			numBucketExamples
+		)
+
+		self.batchProbabilities[1].assign(probabilities / tf.reduce_sum(probabilities, axis=1, keepdims=True))
+
+		categoricalLoss = tf.reduce_sum(categoricalLosses)
+		mse = tf.reduce_sum(squaredErrors)/ NUM_OTHER_FEATURES
+
+		return {"loss": (categoricalLoss + mse)/ (2.0 * tf.cast(tf.shape(x)[0], tf.float32))}
 	
 	#generate a batch of waves, return their (compressed) scaleograms and features
 	def generateBatch(self):
+		print("in generateBatch")
 		datapath = os.path.abspath("./trainingdata")
 		while True:
-			print("generating new batch")
 			#will overwrite all of the previous batch as examplesPerBatch stays constant
 			#todo - figure out why STK writes a newline to stderr per written file
 			probsString = ' '.join(['%.2f' % prob for prob in self.batchProbabilities[0]]) + ' '
@@ -205,17 +237,16 @@ class AdaptiveTraining(Model):
 			
 	@staticmethod
 	def run():
-		model = AdaptiveTraining(validationData=generateValidationSet())
+		model = AdaptiveTraining()
 		model.compile(
 			optimizer="adam",
 			loss={
 				"classout": CategoricalCrossentropy(from_logits=False),
 				"regressionout": MeanSquaredError(),
-			},
-			metrics=["accuracy"]
+			}
 		)
 
-		trainingCallback = AdaptiveTraining.TrainingStepCallback()
+		#trainingCallback = AdaptiveTraining.TrainingStepCallback()
 
 		checkpoint = ModelCheckpoint(
 			"C:\\Users\\abdulg\\Desktop\\waves\\checkpoint.keras",
@@ -229,13 +260,14 @@ class AdaptiveTraining(Model):
 		stoppingCondition = EarlyStopping(monitor="val_loss", patience=3, restore_best_weights=True)
 
 		history = {}
+		validationData = generateValidationSet()
 		while True:
 			history = model.fit(
 				x=model.generateBatch(),
-				validation_data=model.validationData,
-				callbacks=[trainingCallback, stoppingCondition, checkpoint],
+				validation_data=validationData,
+				callbacks=[stoppingCondition, checkpoint],
 				epochs=1,
-				steps_per_epoch = 20,
+				steps_per_epoch = 1,
 				batch_size=32,
 				verbose=2
 			)

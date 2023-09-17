@@ -18,8 +18,8 @@ SAMPLES_PER_EXAMPLE = SAMPLE_RATE * 4
 NUM_WAVES = 3
 NUM_MELS = 12
 NUM_OTHER_FEATURES = 11
-NUM_DCT_COEFFICIENTS = 6
-NUM_FRAMES = 128
+NUM_DCT_COEFFICIENTS = 3
+NUM_FRAMES = 512
 SYNTHESIZER_PATH = "C:\\Users\\abdulg\\source\\repos\\Synth\\out\\build\\x64-debug\\synth.exe"
 
 """
@@ -38,7 +38,7 @@ pModFreq
 """
 
 #for normalization
-PARAMETER_LBS = np.asarray([0, 0, 0, 440, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+PARAMETER_LBS = np.asarray([0, 0, 0, 440, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
 PARAMETER_RANGE = np.asarray([1, 1, 1, 1661.22, 3322, 1, 1, 1, 1, 1, 8, 0.5, 8, 0.02]) - PARAMETER_LBS
 
 def normaliseParams(params):
@@ -114,7 +114,7 @@ def processWavs(datapath):
 def generateValidationSet():
 	print("generating validation data")
 	datapath = os.path.abspath("./validationdata")
-	#subprocess.run(f"{SYNTHESIZER_PATH} 600 {datapath}", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+	#subprocess.run(f"{SYNTHESIZER_PATH} 400 {datapath}", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 	#wavs = processWavs(datapath)
 
@@ -127,7 +127,6 @@ def generateValidationSet():
 	return wavs
 
 #defining the model
-from keras.models import Model
 from keras.layers import Input, Conv2D, Dense, AveragePooling2D, Flatten, Softmax, BatchNormalization
 from keras.losses import CategoricalCrossentropy, MeanSquaredError, MeanAbsolutePercentageError
 from keras.backend import set_image_data_format
@@ -136,8 +135,9 @@ from keras import Model
 from keras.losses import CategoricalCrossentropy, MeanSquaredError
 
 class AdaptiveTraining(Model):
-	def __init__(self, **kwargs):
+	def __init__(self, validationData, **kwargs):
 		self.training = True
+		self.validationData = validationData
 		self.batchProbabilities = [
 			np.full(NUM_WAVES, 1 / NUM_WAVES),
 			np.full((NUM_OTHER_FEATURES, 10), 1 / 10)
@@ -165,68 +165,47 @@ class AdaptiveTraining(Model):
 			outputs = [classOutput, regressionOutput]
 		)
 
-	def validation_step(self, data):
-		x, y = data.numpy()
-		yPred = self(x, training=False)
+	def generateProbabilities(self):
+		print("in generateprobabilities")
+		x, y = self.validationData
+		yPred = self.predict(x)
 
 		categoricalLosses = np.sum(- y[0] * np.log(yPred[0]), axis=0)
 		categoricalLoss = np.sum(categoricalLosses)
 		self.batchProbabilities[0] = categoricalLosses / categoricalLoss
 		print(f"categorical loss: {self.batchProbabilities[0]}")
 
-		squaredErrors = (y[1] - yPred[1]) ** 2
-		binFeatureErrors = np.apply_along_axis(
-			lambda x: np.bincount(np.floor(10 * x).astype(np.int64), minlength=10),
-			1,
-			squaredErrors.T
-		)
-		self.batchProbabilities[1] = binFeatureErrors / np.sum(binFeatureErrors, axis=1)[:, np.newaxis]
-		print(f"continuous loss: {self.batchProbabilities[1]}")
+		squaredErrors = (y[1] - yPred[1]) ** 2 #shape (n, 11)
+		roundedTargets = np.floor(10 * y[1]).astype(np.int64)
+		probabilities = np.zeros((11, 10))
 
-		# Update the metrics.
-		for metric in self.metrics:
-			if metric.name != "loss":
-				metric.update_state(y, yPred)
-				
-		return super().test_step(self, data) #{m.name: m.result() for m in self.metrics}
+		for i in range(len(roundedTargets)):
+			probabilities[np.arange(11), roundedTargets[i]] += squaredErrors[i]
+
+		self.batchProbabilities[1] = probabilities / np.sum(probabilities, axis=1)[:, np.newaxis]
 	
 	#generate a batch of waves, return their (compressed) scaleograms and features
 	def generateBatch(self):
-		print("generating new batch")
 		datapath = os.path.abspath("./trainingdata")
 		while True:
+			print("generating new batch")
 			#will overwrite all of the previous batch as examplesPerBatch stays constant
 			#todo - figure out why STK writes a newline to stderr per written file
 			probsString = ' '.join(['%.2f' % prob for prob in self.batchProbabilities[0]]) + ' '
 			probsString += ' '.join(['%.2f' % prob for probs in self.batchProbabilities[1] for prob in probs])
-			print(f"{SYNTHESIZER_PATH} {EXAMPLES_PER_BATCH} {datapath} {probsString}")
 			subprocess.run(
 				f"{SYNTHESIZER_PATH} {EXAMPLES_PER_BATCH} {datapath} {probsString}",
 				stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
 			)
 			yield processWavs(datapath)
-
-	def test_step(self, data):
-		if self.training:
-			print("learning")
-			return super().test_step(data)
-		else:
-			print("validating")
-			return self.validation_step(data)
 		
-	class TrainingStepCallback(Callback):
-		def __init__(self, model):
-			self.model = model
-		def on_epoch_begin(self, epoch, logs=None):
-			print("here 1")
-			self.model.training = True
-		def on_epoch_end(self, epoch, logs=None):
-			print("here 2")
-			self.model.training = False
-
+	class TrainingStepCallback(Callback): 
+		def on_train_batch_end(self, batch, logs=None):
+			self.model.generateProbabilities()
+			
 	@staticmethod
 	def run():
-		model = AdaptiveTraining()
+		model = AdaptiveTraining(validationData=generateValidationSet())
 		model.compile(
 			optimizer="adam",
 			loss={
@@ -236,7 +215,7 @@ class AdaptiveTraining(Model):
 			metrics=["accuracy"]
 		)
 
-		trainingCallback = AdaptiveTraining.TrainingStepCallback(model)
+		trainingCallback = AdaptiveTraining.TrainingStepCallback()
 
 		checkpoint = ModelCheckpoint(
 			"C:\\Users\\abdulg\\Desktop\\waves\\checkpoint.keras",
@@ -249,15 +228,14 @@ class AdaptiveTraining(Model):
 
 		stoppingCondition = EarlyStopping(monitor="val_loss", patience=3, restore_best_weights=True)
 
-		validationData = generateValidationSet()
 		history = {}
 		while True:
 			history = model.fit(
 				x=model.generateBatch(),
-				validation_data=validationData,
+				validation_data=model.validationData,
 				callbacks=[trainingCallback, stoppingCondition, checkpoint],
 				epochs=1,
-				steps_per_epoch = 32,
+				steps_per_epoch = 20,
 				batch_size=32,
 				verbose=2
 			)
@@ -268,7 +246,6 @@ class AdaptiveTraining(Model):
 
 import pickle
 if __name__ == "__main__":
-	print("running")
 	history = AdaptiveTraining.run()
 	with open("./lastHistory", "wb") as histFile:
 		pickle.dump(history.history, histFile)

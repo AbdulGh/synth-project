@@ -77,7 +77,7 @@ void generateRandomWaveforms(int number, string_view directory, unique_ptr<array
         //vibrato
         int pitchModulated = rand() % 2;
         float pModFreq = pitchModulated * sampleDistribution(&continuousDistributions[9]) * 8;
-        float pModInt = pitchModulated * sampleDistribution(&continuousDistributions[10]) / 32;
+        float pModInt = pitchModulated * sampleDistribution(&continuousDistributions[10]) / 50;
 
         //put that all into a synth
         Synth synth{waveChoice};
